@@ -20,15 +20,10 @@ services:
       - clickhouse
       
   clickhouse:
-    build:
-      context: ./collector/clickhouse
+    image: yandex/clickhouse-server:latest
     ports:
       - "8123:8123"
       - "9000:9000"
-    volumes:
-      - ./clickhouse/config.d/local_paths.xml:/etc/clickhouse-server/config.d/local_paths.xml:ro
-      - clickhouse-data:/var/lib/clickhouse
-      - clickhouse-logs:/var/log/clickhouse-server
 
       
 volumes:
