@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  fluentbit-worker:
+    build:
+      context: ./worker
+    volumes:
+      - /var/log/nginx:/var/log/nginx:ro
+      - /var/log/syslog:/var/log/syslog:ro
+      - /var/log/containers:/var/log/containers:ro
+    environment:
+      - FLUENTBIT_MASTER_HOST=fluentbit-master
+    depends_on:
+      - fluentbit-master
+
+volumes:
+  clickhouse_data:

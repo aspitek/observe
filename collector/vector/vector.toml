@@ -1,0 +1,19 @@
+[sources.fluentbit]
+  type = "socket"
+  mode = "tcp"
+  address = "0.0.0.0:24224" # port où Fluent Bit master forwarde vers Vector
+
+[transforms.parse_logs]
+  type = "remap" # Vector Remap Language (VRL)
+  inputs = ["fluentbit"]
+  source = '''
+  .timestamp = to_timestamp!(.timestamp)
+  '''
+
+[sinks.clickhouse]
+  type = "clickhouse"
+  inputs = ["parse_logs"]
+  endpoint = "http://clickhouse:8123"
+  database = "default"
+  table = "logs"
+  compression = "gzip"

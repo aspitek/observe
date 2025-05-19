@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  fluentbit-master:
+    build:
+      context: ./master
+    ports:
+      - "2021:2021"
+    depends_on:
+      - clickhouse
+
+  vector:
+    image: timberio/vector:latest
+    ports:
+      - "8686:8686"  # interface web Vector optionnelle
+    volumes:
+      - ./vector/vector.toml:/etc/vector/vector.toml:ro
+    depends_on:
+      - fluentbit-master
+      - clickhouse
+      
+  clickhouse:
+    build:
+      context: ./clickhouse
+    ports:
+      - "8123:8123"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+
+  # Exemple d'un worker (répéter selon besoin sur d'autres machines avec config adaptée)
+  fluentbit-worker:
+    build:
+      context: ./worker
+    volumes:
+      - /var/log/nginx:/var/log/nginx:ro
+      - /var/log/syslog:/var/log/syslog:ro
+      - /var/log/containers:/var/log/containers:ro
+    environment:
+      - FLUENTBIT_MASTER_HOST=fluentbit-master
+    depends_on:
+      - fluentbit-master
+
+volumes:
+  clickhouse_data:
