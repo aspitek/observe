@@ -9,9 +9,8 @@ services:
       - /var/log/syslog:/var/log/syslog:ro
       - /var/log/containers:/var/log/containers:ro
     environment:
-      - FLUENTBIT_MASTER_HOST=fluentbit-master
-    depends_on:
-      - fluentbit-master
+      - FLUENTBIT_MASTER_HOST=89.116.38.238
+
 
 volumes:
   clickhouse_data:
