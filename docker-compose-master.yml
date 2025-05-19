@@ -24,8 +24,13 @@ services:
       context: ./collector/clickhouse
     ports:
       - "8123:8123"
+      - "9000:9000"
     volumes:
-      - clickhouse_data:/var/lib/clickhouse
+      - ./clickhouse/config.d/local_paths.xml:/etc/clickhouse-server/config.d/local_paths.xml:ro
+      - clickhouse-data:/var/lib/clickhouse
+      - clickhouse-logs:/var/log/clickhouse-server
 
+      
 volumes:
-  clickhouse_data:
+  clickhouse-data:
+  clickhouse-logs:
