@@ -27,18 +27,5 @@ services:
     volumes:
       - clickhouse_data:/var/lib/clickhouse
 
-  # Exemple d'un worker (répéter selon besoin sur d'autres machines avec config adaptée)
-  fluentbit-worker:
-    build:
-      context: ./worker
-    volumes:
-      - /var/log/nginx:/var/log/nginx:ro
-      - /var/log/syslog:/var/log/syslog:ro
-      - /var/log/containers:/var/log/containers:ro
-    environment:
-      - FLUENTBIT_MASTER_HOST=fluentbit-master
-    depends_on:
-      - fluentbit-master
-
 volumes:
   clickhouse_data:
