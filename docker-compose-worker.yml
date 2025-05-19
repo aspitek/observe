@@ -3,7 +3,7 @@ version: '3.8'
 services:
   fluentbit-worker:
     build:
-      context: ./worker
+      context: ./collector/worker
     volumes:
       - /var/log/nginx:/var/log/nginx:ro
       - /var/log/syslog:/var/log/syslog:ro
