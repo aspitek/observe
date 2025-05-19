@@ -10,7 +10,7 @@ services:
       - clickhouse
 
   vector:
-    image: timberio/vector:latest
+    image: timberio/vector:latest-alpine
     ports:
       - "8686:8686"  # interface web Vector optionnelle
     volumes:
