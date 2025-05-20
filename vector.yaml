@@ -54,11 +54,21 @@ transforms:
             }
 
             # Handle timestamp
-            date_ms = if parsed.date != null {
-              to_float(parsed.date) * 1000
-            } else {
-              to_float(now())
+            date_val, err = to_float(parsed.date)
+            if err != null {
+              date_val = to_float(now()) ?? 0.0
             }
+            date_ms = date_val * 1000
+            if date_ms < 0 || is_nan(date_ms) {
+              log("Invalid timestamp in metrics event: " + to_string(date_ms), level: "warn")
+              date_ms = to_float(now()) ?? 0.0
+            }
+            .timestamp, err = from_unix_timestamp(to_int(date_ms))
+            if err != null {
+              log("Failed to convert timestamp: " + to_string(err), level: "warn")
+              .timestamp = now()
+            }
+
             if date_ms < 0 || is_nan(date_ms) {
               log("Invalid timestamp in metrics event: " + to_string(date_ms), level: "warn")
               date_ms = to_float(now())
@@ -104,62 +114,45 @@ transforms:
         }
 
         # Process each entry
-        for_each(array!(message)) -> |index, entry| {
-          entry_str, err = to_string(entry)
+        entry = if is_array(.message) { .message[0] } else { .message }
+        entry_str, err = to_string(entry)
+        if err != null {
+          log("Failed to convert entry to string: " + to_string(err), level: "warn")
+          .level = "unknown"
+          .message = "Invalid entry format"
+          .tags = {}
+          .timestamp = now()
+        } else {
+          parsed, err = parse_json(entry_str)
           if err != null {
-            log("Failed to convert entry to string: " + to_string(err), level: "warn")
-            event = {
-              "host": .host,
-              "service": .service,
-              "tags": {},
-              "level": "unknown",
-              "message": "Invalid entry format",
-              "timestamp": now()
-            }
-            emit!(event)
+            log("Failed to parse JSON in log entry: " + to_string(err), level: "warn")
+            .level = "unknown"
+            .message = entry_str
+            .tags = {}
+            .timestamp = now()
           } else {
-            parsed, err = parse_json(entry_str)
+            .tags = parsed.tags ?? {}
+            .level = to_string(parsed.level) ?? "unknown"
+            .message = to_string(parsed.log) ?? ""
+
+            date_val, err = to_float(parsed.date)
             if err != null {
-              log("Failed to parse JSON in log entry: " + to_string(err), level: "warn")
-              event = {
-                "host": .host,
-                "service": .service,
-                "tags": {},
-                "level": "unknown",
-                "message": entry_str,
-                "timestamp": now()
-              }
-              emit!(event)
+              date_val = to_float(now()) ?? 0.0
+            }
+            date_ms = date_val * 1000
+            if date_ms < 0 || is_nan(date_ms) {
+              log("Invalid timestamp in log entry: " + to_string(date_ms), level: "warn")
+              .timestamp = now()
             } else {
-              event = {
-                "host": .host,
-                "service": .service,
-                "tags": parsed.tags ?? {},
-                "level": to_string(parsed.level) ?? "unknown",
-                "message": to_string(parsed.log) ?? ""
+              .timestamp, err = from_unix_timestamp(to_int(date_ms))
+              if err != null {
+                log("Failed to convert timestamp: " + to_string(err), level: "warn")
+                .timestamp = now()
               }
-              # Handle timestamp
-              date_ms = if parsed.date != null {
-                to_float(parsed.date) * 1000
-              } else {
-                to_float(now())
-              }
-              if date_ms < 0 || is_nan(date_ms) {
-                log("Invalid timestamp in log entry: " + to_string(date_ms), level: "warn")
-                event.timestamp = now()
-              } else {
-                event.timestamp, err = from_unix_timestamp(to_int(date_ms))
-                if err != null {
-                  log("Failed to convert timestamp: " + to_string(err), level: "warn")
-                  event.timestamp = now()
-                }
-              }
-              emit!(event)
             }
           }
         }
-        # Drop original event
-        null
+
       }
 
 sinks:
