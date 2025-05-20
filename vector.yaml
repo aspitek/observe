@@ -3,7 +3,6 @@ sources:
     type: socket
     address: 0.0.0.0:24224
     mode: tcp
-    # Explicitly set Fluent Forward protocol
     format: fluent
 
 transforms:
@@ -12,16 +11,12 @@ transforms:
     inputs:
       - fluentbit
     source: |
+      # Ensure .tag is a string with a default fallback
+      .tag = to_string(.tag) ?? "unknown"
       # Strict filter for metrics
       if !starts_with(.tag, "metrics.") {
         null
       } else {
-        # Ensure tag is a string
-        .tag, err = to_string(.tag)
-        if err != null {
-          log("Failed to convert .tag to string: " + to_string(err), level: "warn")
-          .tag = "unknown"
-        }
         # Set host and service
         .host = to_string(.host) ?? "unknown"
         .service = "system"
@@ -30,7 +25,7 @@ transforms:
         # Parse message (Fluent Forward may wrap entries)
         message = .message
         if is_array(.message) {
-          # Handle case where message is an array of entries
+          # Handle array of entries
           message = .message[0]
         }
         message_str, err = to_string(message)
@@ -93,22 +88,18 @@ transforms:
     inputs:
       - fluentbit
     source: |
+      # Ensure .tag is a string with a default fallback
+      .tag = to_string(.tag) ?? "unknown"
       # Strict filter for logs
       if !starts_with(.tag, "logs.") {
         null
       } else {
-        .tag, err = to_string(.tag)
-        if err != null {
-          log("Failed to convert .tag to string: " + to_string(err), level: "warn")
-          .tag = "logs.unknown"
-        }
         .host = to_string(.host) ?? "unknown"
         .service = "app"
 
-        # Handle Fluent Forward message (may be array or object)
+        # Handle Fluent Forward message
         message = .message
         if !is_array(message) {
-          # Wrap single message in array for consistent processing
           message = [message]
         }
 
