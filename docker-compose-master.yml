@@ -19,6 +19,8 @@ services:
     ports:
       - "8686:8686"  # interface web Vector optionnelle
       - "24224:24224"  # port de sortie pour Fluent Bit
+    environment:
+      - VECTOR_LOG=debug
     volumes:
       - ./vector.yaml:/etc/vector/vector.yaml:ro
     depends_on:
