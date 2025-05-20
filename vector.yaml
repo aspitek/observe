@@ -58,10 +58,14 @@ transforms:
             }
 
             # Safely handle timestamp conversion
-            date_ms = if parsed.date != null {
+            date_ms, err = if parsed.date != null {
               to_float(parsed.date) * 1000
             } else {
               to_float(now())
+            }
+            if err != null {
+              log("Failed to convert date to milliseconds: " + to_string(err), level: "warn")
+              date_ms = to_float(now())
             }
             .timestamp = from_unix_timestamp(to_int(date_ms) ?? to_int(now())) ?? now()
 
@@ -122,26 +126,33 @@ transforms:
           } else {
             # Handle array of log entries
             if is_array(parsed) {
-              # Process each log entry
-              for_each(parsed) -> |index, entry| {
-                # Create a new event by modifying the current event
+              for_each(array!(parsed)) -> |index, entry| {
                 .timestamp = if entry.date != null {
-                  date_ms = to_float(entry.date) * 1000
-                  from_unix_timestamp(to_int(date_ms) ?? to_int(now())) ?? now()
+                  date_ms, err = to_float(entry.date) * 1000
+                  if err != null {
+                    log("Failed to convert entry.date to milliseconds: " + to_string(err), level: "warn")
+                    now()
+                  } else {
+                    from_unix_timestamp(to_int(date_ms) ?? to_int(now())) ?? now()
+                  }
                 } else {
                   now()
                 }
                 .level = to_string(entry.level) ?? "unknown"
                 .message = to_string(entry.log) ?? ""
                 .tags = if entry.tags != null { entry.tags } else { {} }
-                # Output the event (implicitly handled by VRL)
               }
               null
             } else {
               # Single log entry
               .timestamp = if parsed.date != null {
-                date_ms = to_float(parsed.date) * 1000
-                from_unix_timestamp(to_int(date_ms) ?? to_int(now())) ?? now()
+                date_ms, err = to_float(parsed.date) * 1000
+                if err != null {
+                  log("Failed to convert parsed.date to milliseconds: " + to_string(err), level: "warn")
+                  now()
+                } else {
+                  from_unix_timestamp(to_int(date_ms) ?? to_int(now())) ?? now()
+                }
               } else {
                 now()
               }
