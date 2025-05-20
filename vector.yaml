@@ -1,4 +1,3 @@
-
 sources:
   fluentbit:
     type: socket
@@ -11,23 +10,77 @@ transforms:
     inputs:
       - fluentbit
     source: |
-      structured = parse_json!(.message)
+      .tag = .tag || "unknown"
+      .structured = parse_json(.message) || {}
+      .raw_json = .message
+      .timestamp = parse_timestamp!(.structured.timestamp || now())
+      .hostname = .structured.hostname || .host || "unknown"
+
+  filter_phantom_logs:
+    type: remap
+    inputs:
+      - parse_json
+    source: |
+      . = if .structured.message != "There's a breach in the warp core, captain" && .structured.message != "We're gonna need a bigger boat" {
+          .
+      } else {
+          null
+      }
+
+  prepare_for_clickhouse:
+    type: remap
+    inputs:
+      - filter_phantom_logs
+    source: |
+      . = {
+        "timestamp": .timestamp,
+        "tag": .tag,
+        "hostname": .hostname,
+        "appname": .structured.appname || null,
+        "facility": .structured.facility || null,
+        "severity": .structured.severity || null,
+        "msgid": .structured.msgid || null,
+        "procid": parse_int(.structured.procid, default: null),
+        "message": .structured.message || null,
+        "version": parse_int(.structured.version, default: null),
+        "metrics": if .tag != "filelogs" { .structured } else { {} },
+        "raw_json": .raw_json
+      }
 
 sinks:
-  # clickhouse:
-  #   type: clickhouse
-  #   inputs:
-  #     - parse_json
-  #   endpoint: http://89.116.38.238:8123
-  #   database: default
-  #   table: logs
-  #   compression: gzip
-  #   encoding:
-  #     codec: json
+  clickhouse:
+    type: clickhouse
+    inputs:
+      - prepare_for_clickhouse
+    endpoint: http://89.116.38.238:8123
+    database: default
+    table: logs
+    compression: gzip
+    skip_unknown_fields: true
+    date_time_input_format: best_effort
+    buffer:
+      type: memory
+      max_events: 1000
+      when_full: block
+    encoding:
+      codec: json
+      only_fields:
+        - timestamp
+        - tag
+        - hostname
+        - appname
+        - facility
+        - severity
+        - msgid
+        - procid
+        - message
+        - version
+        - metrics
+        - raw_json
   console:
     type: console
     inputs:
-      - parse_json
+      - prepare_for_clickhouse
     target: stdout
     encoding:
       codec: json
