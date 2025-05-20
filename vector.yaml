@@ -1,7 +1,3 @@
-# set log level to debug
-global:
-  log_level: debug
-
 
 sources:
   fluentbit:
