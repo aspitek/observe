@@ -77,7 +77,7 @@ transforms:
           # Essayer d'analyser le JSON
           parsed, err = parse_json(local_message_str)
           if err != null {
-            err_str, _ = to_string(err)
+            err_str = to_string(err)
             log("Failed parsing JSON: " + err_str, level: "warn")
             parsed = {}
           }
@@ -207,7 +207,7 @@ transforms:
           parsed, err = parse_json(local_message_str)
           if err != null {
             # Si ce n'est pas du JSON, utiliser le message tel quel
-            err_str, _ = to_string(err)
+            err_str = to_string(err)
             log("Log is not JSON: " + err_str, level: "debug")
             .message = local_message_str
             .timestamp = now()
