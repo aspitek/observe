@@ -63,7 +63,6 @@ sinks:
       max_events: 1000
       when_full: block
     encoding:
-      codec: json
       only_fields:
         - timestamp
         - tag
