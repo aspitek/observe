@@ -10,23 +10,35 @@ transforms:
     inputs:
       - fluentbit
     source: |
-      # Validation et conversion de .tag
-      .tag = if .tag != null { to_string(.tag) ?? (log("Failed to convert .tag to string", level: "warn"); "") } else { "" }
+      # Ensure .tag is a string
+      .tag, err = to_string(.tag)
+      if err != null {
+        log("Failed to convert .tag to string", level: "warn")
+        .tag = ""
+      }
 
-      # Filtrer les métriques
+      # Filter metrics
       if starts_with(.tag, "metrics.") {
-        .host = if .host != null { to_string(.host) ?? "unknown" } else { "unknown" }
+        .host, err = to_string(.host)
+        if err != null {
+          log("Failed to convert .host to string", level: "warn")
+          .host = "unknown"
+        }
         .service = "system"
         .metric_name = replace(.tag, "metrics.", "")
 
-        # Validation de .message
+        # Validation of .message
         if .message == null {
           log("Missing .message in metrics event", level: "warn")
           .metric_value = 0.0
           .timestamp = now()
           .tags = {}
         } else {
-          message_str = to_string(.message) ?? "{}"
+          message_str, err = to_string(.message)
+          if err != null {
+            log("Failed to convert .message to string", level: "warn")
+            message_str = "{}"
+          }
           parsed, err = parse_json(message_str)
 
           .metric_value = if err == null && parsed.value != null {
@@ -52,16 +64,24 @@ transforms:
     inputs:
       - fluentbit
     source: |
-      # Validation et conversion de .tag
-      .tag = if .tag != null { to_string(.tag) ?? (log("Failed to convert .tag to string", level: "warn"); "") } else { "" }
+      # Ensure .tag is a string
+      .tag, err = to_string(.tag)
+      if err != null {
+        log("Failed to convert .tag to string", level: "warn")
+        .tag = ""
+      }
 
-      # Filtrer les logs
+      # Filter logs
       if starts_with(.tag, "logs.") {
-        .host = if .host != null { to_string(.host) ?? "unknown" } else { "unknown" }
+        .host, err = to_string(.host)
+        if err != null {
+          log("Failed to convert .host to string", level: "warn")
+          .host = "unknown"
+        }
         .service = "app"
         .tag = replace(.tag, "logs.", "")
 
-        # Validation de .message
+        # Validation of .message
         if .message == null {
           log("Missing .message in logs event", level: "warn")
           .timestamp = now()
@@ -69,7 +89,11 @@ transforms:
           .message = ""
           .tags = {}
         } else {
-          raw_json = to_string(.message) ?? ""
+          raw_json, err = to_string(.message)
+          if err != null {
+            log("Failed to convert .message to string", level: "warn")
+            raw_json = ""
+          }
           parsed, err = parse_json(raw_json)
 
           .timestamp = if err == null && parsed.timestamp != null {
