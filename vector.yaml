@@ -3,6 +3,8 @@ sources:
     type: socket
     address: 0.0.0.0:24224
     mode: tcp
+    # Explicitly set Fluent Forward protocol
+    format: fluent
 
 transforms:
   metrics_processing:
@@ -10,35 +12,34 @@ transforms:
     inputs:
       - fluentbit
     source: |
-      # Ensure .tag is a string
-      .tag, err = to_string(.tag)
-      if err != null {
-        log("Failed to convert .tag to string", level: "warn")
-        .tag = ""
-      }
-
-      # Filter metrics
-      if starts_with(.tag, "metrics.") {
-        .host, err = to_string(.host)
+      # Strict filter for metrics
+      if !starts_with(.tag, "metrics.") {
+        null
+      } else {
+        # Ensure tag is a string
+        .tag, err = to_string(.tag)
         if err != null {
-          log("Failed to convert .host to string", level: "warn")
-          .host = "unknown"
+          log("Failed to convert .tag to string: " + to_string(err), level: "warn")
+          .tag = "unknown"
         }
+        # Set host and service
+        .host = to_string(.host) ?? "unknown"
         .service = "system"
         .metric_name = replace(.tag, "metrics.", "")
 
-        # Validation of .message
-        if .message == null {
-          log("Missing .message in metrics event", level: "warn")
+        # Parse message (Fluent Forward may wrap entries)
+        message = .message
+        if is_array(.message) {
+          # Handle case where message is an array of entries
+          message = .message[0]
+        }
+        message_str, err = to_string(message)
+        if err != null {
+          log("Failed to convert .message to string: " + to_string(err), level: "warn")
           .metric_value = 0.0
           .timestamp = now()
           .tags = {}
         } else {
-          message_str, err = to_string(.message)
-          if err != null {
-            log("Failed to convert .message to string", level: "warn")
-            message_str = "{}"
-          }
           parsed, err = parse_json(message_str)
           if err != null {
             log("Failed to parse JSON in metrics event: " + to_string(err), level: "warn")
@@ -46,7 +47,7 @@ transforms:
             .timestamp = now()
             .tags = {}
           } else {
-            # Handle specific metric types based on .metric_name
+            # Extract metric value
             .metric_value = if .metric_name == "cpu" {
               to_float(parsed.cpu_p) ?? 0.0
             } else if .metric_name == "mem" {
@@ -57,14 +58,14 @@ transforms:
               0.0
             }
 
-            # Safely handle timestamp conversion
-            date_ms, err = if parsed.date != null {
+            # Handle timestamp
+            date_ms = if parsed.date != null {
               to_float(parsed.date) * 1000
             } else {
               to_float(now())
             }
-            if err != null {
-              log("Failed to convert date to milliseconds: " + to_string(err), level: "warn")
+            if date_ms < 0 || is_nan(date_ms) {
+              log("Invalid timestamp in metrics event: " + to_string(date_ms), level: "warn")
               date_ms = to_float(now())
             }
             .timestamp, err = from_unix_timestamp(to_int(date_ms))
@@ -74,15 +75,17 @@ transforms:
             }
 
             # Extract tags
-            .tags = if parsed.cpu0 != null {
-              {"cpu_core": "0", "p_user": to_string(parsed.cpu0.p_user) ?? "", "p_system": to_string(parsed.cpu0.p_system) ?? ""}
+            .tags = if .metric_name == "cpu" && parsed.cpu0 != null {
+              {
+                "cpu_core": "0",
+                "p_user": to_string(parsed.cpu0.p_user) ?? "",
+                "p_system": to_string(parsed.cpu0.p_system) ?? ""
+              }
             } else {
               {}
             }
           }
         }
-      } else {
-        null
       }
 
   logs_processing:
@@ -90,91 +93,81 @@ transforms:
     inputs:
       - fluentbit
     source: |
-      # Ensure .tag is a string
-      .tag, err = to_string(.tag)
-      if err != null {
-        log("Failed to convert .tag to string", level: "warn")
-        .tag = ""
-      }
-
-      # Filter logs
-      if starts_with(.tag, "logs.") {
-        .host, err = to_string(.host)
+      # Strict filter for logs
+      if !starts_with(.tag, "logs.") {
+        null
+      } else {
+        .tag, err = to_string(.tag)
         if err != null {
-          log("Failed to convert .host to string", level: "warn")
-          .host = "unknown"
+          log("Failed to convert .tag to string: " + to_string(err), level: "warn")
+          .tag = "logs.unknown"
         }
+        .host = to_string(.host) ?? "unknown"
         .service = "app"
-        .tag = replace(.tag, "logs.", "")
 
-        # Validation of .message
-        if .message == null {
-          log("Missing .message in logs event", level: "warn")
-          .timestamp = now()
-          .level = "unknown"
-          .message = ""
-          .tags = {}
-        } else {
-          message_str, err = to_string(.message)
+        # Handle Fluent Forward message (may be array or object)
+        message = .message
+        if !is_array(message) {
+          # Wrap single message in array for consistent processing
+          message = [message]
+        }
+
+        # Process each entry
+        for_each(array!(message)) -> |index, entry| {
+          entry_str, err = to_string(entry)
           if err != null {
-            log("Failed to convert .message to string", level: "warn")
-            message_str = "[]"
-          }
-          parsed, err = parse_json(message_str)
-          if err != null {
-            log("Failed to parse JSON in logs event: " + to_string(err), level: "warn")
-            .timestamp = now()
-            .level = "unknown"
-            .message = message_str
-            .tags = {}
+            log("Failed to convert entry to string: " + to_string(err), level: "warn")
+            event = {
+              "host": .host,
+              "service": .service,
+              "tags": {},
+              "level": "unknown",
+              "message": "Invalid entry format",
+              "timestamp": now()
+            }
+            emit!(event)
           } else {
-            # Handle array of log entries
-            if is_array(parsed) {
-              for_each(array!(parsed)) -> |index, entry| {
-                if entry.date != null {
-                  date_ms, err = to_float(entry.date) * 1000
-                  if err != null {
-                    log("Failed to convert entry.date to milliseconds: " + to_string(err), level: "warn")
-                    .timestamp = now()
-                  } else {
-                    .timestamp, err = from_unix_timestamp(to_int(date_ms))
-                    if err != null {
-                      log("Failed to convert timestamp: " + to_string(err), level: "warn")
-                      .timestamp = now()
-                    }
-                  }
-                } else {
-                  .timestamp = now()
-                }
-                .level = to_string(entry.level) ?? "unknown"
-                .message = to_string(entry.log) ?? ""
-                .tags = if entry.tags != null { entry.tags } else { {} }
+            parsed, err = parse_json(entry_str)
+            if err != null {
+              log("Failed to parse JSON in log entry: " + to_string(err), level: "warn")
+              event = {
+                "host": .host,
+                "service": .service,
+                "tags": {},
+                "level": "unknown",
+                "message": entry_str,
+                "timestamp": now()
               }
-              null
+              emit!(event)
             } else {
-              # Single log entry
-              if parsed.date != null {
-                date_ms, err = to_float(parsed.date) * 1000
-                if err != null {
-                  log("Failed to convert parsed.date to milliseconds: " + to_string(err), level: "warn")
-                  .timestamp = now()
-                } else {
-                  .timestamp, err = from_unix_timestamp(to_int(date_ms))
-                  if err != null {
-                    log("Failed to convert timestamp: " + to_string(err), level: "warn")
-                    .timestamp = now()
-                  }
-                }
-              } else {
-                .timestamp = now()
+              event = {
+                "host": .host,
+                "service": .service,
+                "tags": parsed.tags ?? {},
+                "level": to_string(parsed.level) ?? "unknown",
+                "message": to_string(parsed.log) ?? ""
               }
-              .level = to_string(parsed.level) ?? "unknown"
-              .message = to_string(parsed.log) ?? ""
-              .tags = if parsed.tags != null { parsed.tags } else { {} }
+              # Handle timestamp
+              date_ms = if parsed.date != null {
+                to_float(parsed.date) * 1000
+              } else {
+                to_float(now())
+              }
+              if date_ms < 0 || is_nan(date_ms) {
+                log("Invalid timestamp in log entry: " + to_string(date_ms), level: "warn")
+                event.timestamp = now()
+              } else {
+                event.timestamp, err = from_unix_timestamp(to_int(date_ms))
+                if err != null {
+                  log("Failed to convert timestamp: " + to_string(err), level: "warn")
+                  event.timestamp = now()
+                }
+              }
+              emit!(event)
             }
           }
         }
-      } else {
+        # Drop original event
         null
       }
 
@@ -191,8 +184,11 @@ sinks:
     date_time_best_effort: true
     buffer:
       type: memory
-      max_events: 1000
-      when_full: block
+      max_events: 100
+      when_full: drop_newest
+    batch:
+      max_events: 5
+      timeout_secs: 0.2
     encoding:
       only_fields:
         - timestamp
@@ -201,6 +197,9 @@ sinks:
         - metric_name
         - metric_value
         - tags
+    request:
+      timeout_secs: 3
+      retry_attempts: 5
 
   logs_clickhouse:
     type: clickhouse
@@ -214,8 +213,11 @@ sinks:
     date_time_best_effort: true
     buffer:
       type: memory
-      max_events: 1000
-      when_full: block
+      max_events: 100
+      when_full: drop_newest
+    batch:
+      max_events: 5
+      timeout_secs: 0.2
     encoding:
       only_fields:
         - timestamp
@@ -224,3 +226,14 @@ sinks:
         - level
         - message
         - tags
+    request:
+      timeout_secs: 3
+      retry_attempts: 5
+
+  debug_console:
+    type: console
+    inputs:
+      - metrics_processing
+      - logs_processing
+    encoding:
+      codec: json
