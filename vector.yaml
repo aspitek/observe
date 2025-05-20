@@ -67,7 +67,7 @@ transforms:
               log("Failed to convert date to milliseconds: " + to_string(err), level: "warn")
               date_ms = to_float(now())
             }
-            .timestamp = from_unix_timestamp(to_int(date_ms) ?? to_int(now())) ?? now()
+            .timestamp = from_unix_timestamp(to_int(date_ms))
 
             # Extract tags
             .tags = if parsed.cpu0 != null {
@@ -133,7 +133,7 @@ transforms:
                     log("Failed to convert entry.date to milliseconds: " + to_string(err), level: "warn")
                     now()
                   } else {
-                    from_unix_timestamp(to_int(date_ms) ?? to_int(now())) ?? now()
+                    from_unix_timestamp(to_int(date_ms))
                   }
                 } else {
                   now()
@@ -151,7 +151,7 @@ transforms:
                   log("Failed to convert parsed.date to milliseconds: " + to_string(err), level: "warn")
                   now()
                 } else {
-                  from_unix_timestamp(to_int(date_ms) ?? to_int(now())) ?? now()
+                  from_unix_timestamp(to_int(date_ms))
                 }
               } else {
                 now()
