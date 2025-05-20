@@ -5,43 +5,92 @@ sources:
     mode: tcp
 
 transforms:
-  basic_processing:
+  # Transformation pour les métriques
+  metrics_processing:
     type: remap
     inputs:
       - fluentbit
     source: |
-      # Assure que tag et hostname existent
-      .tag = .tag || "unknown"
-      .hostname = .host || "unknown"
-
-      # Convertir message en string JSON (sécurisé)
-      raw_json, err = to_string(.message)
-      .raw_json = if err == null { raw_json } else { "" }
-
-      # Parser JSON pour extraire champs clés
-      parsed, err = parse_json(.raw_json)
-
-      # Timestamp avec fallback now()
-      .timestamp = if err == null && parsed.timestamp != null {
-        parse_timestamp!(parsed.timestamp, "%Y-%m-%dT%H:%M:%S.%fZ") || now()
+      # Filtrer les métriques
+      if starts_with(.tag, "metrics.") {
+        .host = .host || "unknown"
+        .service = "system" # Ou extraire depuis une source si disponible
+        .metric_name = replace(.tag, "metrics.", "") # Ex. "disk", "cpu", "mem"
+        
+        # Extraire la valeur de la métrique
+        parsed, err = parse_json(to_string(.message) || "{}")
+        .metric_value = if err == null && parsed.value != null {
+          to_float(parsed.value) || 0.0
+        } else {
+          0.0
+        }
+        
+        # Timestamp
+        .timestamp = if err == null && parsed.timestamp != null {
+          parse_timestamp!(parsed.timestamp, "%Y-%m-%dT%H:%M:%S.%fZ") || now()
+        } else {
+          now()
+        }
+        
+        # Tags (ex. cpu_core, disk_name)
+        .tags = if err == null { parsed.tags || {} } else { {} }
       } else {
-        now()
+        # Ignorer les non-métriques
+        null
       }
 
-      # Extraction champs optionnels utiles pour analytique
-      .level = if err == null && parsed.level != null { parsed.level } else { "unknown" }
-      .message = if err == null && parsed.message != null { parsed.message } else { "" }
-      .service = if err == null && parsed.service != null { parsed.service } else { "unknown" }
-
+  # Transformation pour les logs
+  logs_processing:
+    type: remap
+    inputs:
+      - fluentbit
+    source: |
+      # Filtrer les logs
+      if starts_with(.tag, "logs.") {
+        .host = .host || "unknown"
+        .service = "app" # Ou extraire depuis une source si disponible
+        .tag = replace(.tag, "logs.", "") # Ex. "text"
+        
+        # Parser JSON ou non-JSON
+        raw_json, err = to_string(.message)
+        parsed, err = parse_json(raw_json || "{}")
+        
+        # Timestamp
+        .timestamp = if err == null && parsed.timestamp != null {
+          parse_timestamp!(parsed.timestamp, "%Y-%m-%dT%H:%M:%S.%fZ") || now()
+        } else if .time != null {
+          parse_timestamp!(.time, "%Y-%m-%d %H:%M:%S") || now()
+        } else {
+          now()
+        }
+        
+        # Champs logs
+        .level = if err == null && parsed.level != null {
+          parsed.level
+        } else if .level != null {
+          .level
+        } else {
+          "unknown"
+        }
+        .message = if err == null && parsed.message != null {
+          parsed.message
+        } else {
+          .message || ""
+        }
+        .tags = if err == null { parsed.tags || {} } else { {} }
+      } else {
+        # Ignorer les non-logs
+        null
+      }
 
 sinks:
-  clickhouse:
+  metrics_clickhouse:
     type: clickhouse
     inputs:
-      - basic_processing
+      - metrics_processing
     endpoint: http://89.116.38.238:8123
     database: default
-    table: logs
+    table: metrics_log
     compression: gzip
     skip_unknown_fields: true
     date_time_best_effort: true
@@ -52,21 +101,47 @@ sinks:
     encoding:
       only_fields:
         - timestamp
-        - tag
-        - hostname
+        - host
+        - service
+        - metric_name
+        - metric_value
+        - tags
+
+  logs_clickhouse:
+    type: clickhouse
+    inputs:
+      - logs_processing
+    endpoint: http://89.116.38.238:8123
+    database: default
+    table: logs_text
+    compression: gzip
+    skip_unknown_fields: true
+    date_time_best_effort: true
+    buffer:
+      type: memory
+      max_events: 1000
+      when_full: block
+    encoding:
+      only_fields:
+        - timestamp
+        - host
+        - service
         - level
         - message
-        - service
-        - raw_json
+        - tags
 
+  # Sink pour RAG (futur)
   # rag_http:
   #   type: http
   #   inputs:
-  #     - basic_processing
-  #   uri: http://localhost:5000/embedding  # URL de ton service embedding + Qdrant
+  #     - logs_processing
+  #   uri: http://localhost:5000/embedding
   #   method: post
   #   encoding:
   #     codec: json
+  #     only_fields:
+  #       - message
+  #       - tags
   #   healthcheck: true
   #   buffer:
   #     type: memory
