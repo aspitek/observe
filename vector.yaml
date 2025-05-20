@@ -62,7 +62,7 @@ transforms:
             if date_ms < 0 || date_ms != date_ms {
 
               log("Invalid timestamp in metrics event: " + to_string(date_ms), level: "warn")
-              date_ms = to_float(now()) ?? 0.0
+              date_ms = to_float(now())
             }
             .timestamp, err = from_unix_timestamp(to_int(date_ms))
             if err != null {
