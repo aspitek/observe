@@ -53,7 +53,7 @@ transforms:
             now()
           }
 
-          .tags = if err == null { parsed.tags ?? {} } else { {} }
+          .tags = if err == null && parsed.tags != null { parsed.tags } else { {} }
         }
       } else {
         null
@@ -118,7 +118,7 @@ transforms:
             to_string(.message) ?? ""
           }
 
-          .tags = if err == null { parsed.tags ?? {} } else { {} }
+          .tags = if err == null && parsed.tags != null { parsed.tags } else { {} }
         }
       } else {
         null
