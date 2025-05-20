@@ -10,18 +10,29 @@ transforms:
     inputs:
       - fluentbit
     source: |
+      # Assure que tag et hostname existent
       .tag = .tag || "unknown"
       .hostname = .host || "unknown"
-      # Handle to_string fallible operation
+
+      # Convertir message en string JSON (sécurisé)
       raw_json, err = to_string(.message)
       .raw_json = if err == null { raw_json } else { "" }
-      # Try to extract timestamp from JSON, fallback to now()
+
+      # Parser JSON pour extraire champs clés
       parsed, err = parse_json(.raw_json)
+
+      # Timestamp avec fallback now()
       .timestamp = if err == null && parsed.timestamp != null {
         parse_timestamp!(parsed.timestamp, "%Y-%m-%dT%H:%M:%S.%fZ") || now()
       } else {
         now()
       }
+
+      # Extraction champs optionnels utiles pour analytique
+      .level = if err == null && parsed.level != null { parsed.level } else { "unknown" }
+      .message = if err == null && parsed.message != null { parsed.message } else { "" }
+      .service = if err == null && parsed.service != null { parsed.service } else { "unknown" }
+
 
 sinks:
   clickhouse:
@@ -43,11 +54,21 @@ sinks:
         - timestamp
         - tag
         - hostname
+        - level
+        - message
+        - service
         - raw_json
-  console:
-    type: console
-    inputs:
-      - basic_processing
-    target: stdout
-    encoding:
-      codec: json
+
+  # rag_http:
+  #   type: http
+  #   inputs:
+  #     - basic_processing
+  #   uri: http://localhost:5000/embedding  # URL de ton service embedding + Qdrant
+  #   method: post
+  #   encoding:
+  #     codec: json
+  #   healthcheck: true
+  #   buffer:
+  #     type: memory
+  #     max_events: 500
+  #     when_full: block
