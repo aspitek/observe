@@ -121,8 +121,15 @@ transforms:
           # Gestion du timestamp
           if exists(parsed.date) {
             date_val = to_float(parsed.date) ?? now()
-            date_ms = date_val * 1000
-            .timestamp, err = from_unix_timestamp(to_int(date_ms))
+            date_ms, err = date_val * 1000
+            if err != null {
+              .timestamp = now()
+            } else {
+              .timestamp, err = from_unix_timestamp(to_int(date_ms))
+              if err != null {
+                .timestamp = now()
+              }
+            }
             if err != null {
               .timestamp = now()
             }
@@ -235,8 +242,15 @@ transforms:
             # Gestion du timestamp
             if exists(parsed.date) {
               date_val = to_float(parsed.date) ?? now()
-              date_ms = date_val * 1000
-              .timestamp, err = from_unix_timestamp(to_int(date_ms))
+              date_ms, err = date_val * 1000
+              if err != null {
+                .timestamp = now()
+              } else {
+                .timestamp, err = from_unix_timestamp(to_int(date_ms))
+                if err != null {
+                  .timestamp = now()
+                }
+              }
               if err != null {
                 .timestamp = now()
               }
