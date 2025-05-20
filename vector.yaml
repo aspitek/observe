@@ -28,7 +28,7 @@ transforms:
       
       # Filtrer les métriques - moins restrictif
       if !contains(.tag, "metrics") {
-        tag_string, err = to_string(.tag)
+        tag_string = to_string(.tag)
         if err != null {
           log("Dropping non-metrics event with non-string tag", level: "debug")
         } else {
@@ -167,7 +167,7 @@ transforms:
       
       # Filtrer les logs - moins restrictif
       if !contains(.tag, "logs") {
-        tag_string, err = to_string(.tag)
+        tag_string = to_string(.tag)
         if err != null {
           log("Dropping non-log event with non-string tag", level: "debug")
         } else {
