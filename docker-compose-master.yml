@@ -20,7 +20,7 @@ services:
       - "8686:8686"  # interface web Vector optionnelle
       - "24224:24224"  # port de sortie pour Fluent Bit
     volumes:
-      - ./vector.toml:/etc/vector/vector.toml:ro
+      - ./vector.yaml:/etc/vector/vector.yaml:ro
     depends_on:
       - fluentbit-master
       - clickhouse

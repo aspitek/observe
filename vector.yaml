@@ -1,0 +1,32 @@
+sources:
+  fluentbit:
+    type: socket
+    address: 0.0.0.0:24224
+    mode: tcp
+
+transforms:
+  parse_json:
+    type: remap
+    inputs:
+      - fluentbit
+    source: |
+      structured = parse_json!(.message)
+
+sinks:
+  clickhouse:
+    type: clickhouse
+    inputs:
+      - parse_json
+    endpoint: http://89.116.38.238:8123
+    database: default
+    table: logs
+    compression: gzip
+    encoding:
+      codec: json
+  console:
+    type: console
+    inputs:
+      - parse_json
+    target: stdout
+    encoding:
+      codec: json
