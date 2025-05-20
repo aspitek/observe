@@ -1,4 +1,7 @@
 # vector.toml
+[global]
+log_level = "debug"
+
 [sources.fluentbit]
 type = "socket"
 address = "0.0.0.0:24224"
