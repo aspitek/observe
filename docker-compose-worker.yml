@@ -6,6 +6,7 @@ services:
     volumes:
       - /var/log/:/var/log/:ro
       - ./collector/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - ./collector/parsers.conf:/fluent-bit/etc/parsers.conf:ro
     environment:
       - FLUENTBIT_MASTER_HOST=89.116.38.238
     ports:
