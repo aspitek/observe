@@ -40,20 +40,37 @@ transforms:
             message_str = "{}"
           }
           parsed, err = parse_json(message_str)
-
-          .metric_value = if err == null && parsed.value != null {
-            to_float(parsed.value) ?? 0.0
+          if err != null {
+            log("Failed to parse JSON in metrics event: " + to_string(err), level: "warn")
+            .metric_value = 0.0
+            .timestamp = now()
+            .tags = {}
           } else {
-            0.0
-          }
+            # Handle specific metric types based on .metric_name
+            .metric_value = if .metric_name == "cpu" {
+              to_float(parsed.cpu_p) ?? 0.0
+            } else if .metric_name == "mem" {
+              to_float(parsed."Mem.used") ?? 0.0
+            } else if .metric_name == "disk" {
+              to_float(parsed.write_size) ?? 0.0
+            } else {
+              0.0
+            }
 
-          .timestamp = if err == null && parsed.timestamp != null {
-            parse_timestamp(parsed.timestamp, "%Y-%m-%dT%H:%M:%S.%fZ") ?? now()
-          } else {
-            now()
-          }
+            # Extract timestamp (convert Unix timestamp to DateTime)
+            .timestamp = if parsed.date != null {
+              from_unix_timestamp(to_int(parsed.date * 1000) ?? to_int(now())) ?? now()
+            } else {
+              now()
+            }
 
-          .tags = if err == null && parsed.tags != null { parsed.tags } else { {} }
+            # Extract tags (e.g., cpu_core for CPU metrics)
+            .tags = if parsed.cpu0 != null {
+              {"cpu_core": "0", "p_user": to_string(parsed.cpu0.p_user) ?? "", "p_system": to_string(parsed.cpu0.p_system) ?? ""}
+            } else {
+              {}
+            }
+          }
         }
       } else {
         null
@@ -89,36 +106,50 @@ transforms:
           .message = ""
           .tags = {}
         } else {
-          raw_json, err = to_string(.message)
+          message_str, err = to_string(.message)
           if err != null {
             log("Failed to convert .message to string", level: "warn")
-            raw_json = ""
+            message_str = "[]"
           }
-          parsed, err = parse_json(raw_json)
-
-          .timestamp = if err == null && parsed.timestamp != null {
-            parse_timestamp(to_string(parsed.timestamp) ?? "", "%Y-%m-%dT%H:%M:%S.%fZ") ?? now()
-          } else if .time != null {
-            parse_timestamp(to_string(.time) ?? "", "%Y-%m-%d %H:%M:%S") ?? now()
+          parsed, err = parse_json(message_str)
+          if err != null {
+            log("Failed to parse JSON in logs event: " + to_string(err), level: "warn")
+            .timestamp = now()
+            .level = "unknown"
+            .message = message_str
+            .tags = {}
           } else {
-            now()
+            # Handle array of log entries
+            if is_array(parsed) {
+              # Emit one event per log entry
+              for_each(parsed) -> |index, entry| {
+                . = {
+                  "timestamp": if entry.date != null {
+                    from_unix_timestamp(to_int(entry.date * 1000) ?? to_int(now())) ?? now()
+                  } else {
+                    now()
+                  },
+                  "host": .host,
+                  "service": .service,
+                  "level": to_string(entry.level) ?? "unknown",
+                  "message": to_string(entry.log) ?? "",
+                  "tags": if entry.tags != null { entry.tags } else { {} }
+                }
+                emit(.)
+              }
+              null
+            } else {
+              # Single log entry
+              .timestamp = if parsed.date != null {
+                from_unix_timestamp(to_int(parsed.date * 1000) ?? to_int(now())) ?? now()
+              } else {
+                now()
+              }
+              .level = to_string(parsed.level) ?? "unknown"
+              .message = to_string(parsed.log) ?? ""
+              .tags = if parsed.tags != null { parsed.tags } else { {} }
+            }
           }
-
-          .level = if err == null && parsed.level != null {
-            to_string(parsed.level) ?? "unknown"
-          } else if .level != null {
-            to_string(.level) ?? "unknown"
-          } else {
-            "unknown"
-          }
-
-          .message = if err == null && parsed.message != null {
-            to_string(parsed.message) ?? ""
-          } else {
-            to_string(.message) ?? ""
-          }
-
-          .tags = if err == null && parsed.tags != null { parsed.tags } else { {} }
         }
       } else {
         null
