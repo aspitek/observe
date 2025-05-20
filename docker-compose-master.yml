@@ -2,8 +2,11 @@ version: '3.8'
 
 services:
   fluentbit-master:
-    build:
-      context: ./collector/master
+    image: fluent/fluent-bit:latest
+    volumes:
+      - /var/log/:/var/log/:ro
+      - ./collector/fluent-bit-master.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - ./collector/parsers.conf:/fluent-bit/etc/parsers.conf:ro
     ports:
       - "2021:2021"
     depends_on:
