@@ -10,26 +10,39 @@ transforms:
     inputs:
       - fluentbit
     source: |
-      .tag = to_string(.tag) ?? ""
+      # Validation et conversion de .tag
+      .tag = if .tag != null { to_string(.tag) ?? (log("Failed to convert .tag to string", level: "warn"); "") } else { "" }
+
+      # Filtrer les métriques
       if starts_with(.tag, "metrics.") {
-        .host = .host || "unknown"
-        .service = "system" # Ou extraire depuis une source si disponible
-        .metric_name = replace(.tag, "metrics.", "") # Ex. "disk", "cpu", "mem"
+        .host = if .host != null { to_string(.host) ?? "unknown" } else { "unknown" }
+        .service = "system"
+        .metric_name = replace(.tag, "metrics.", "")
 
-        parsed, err = parse_json(to_string(.message) || "{}")
-        .metric_value = if err == null && parsed.value != null {
-          to_float(parsed.value) || 0.0
+        # Validation de .message
+        if .message == null {
+          log("Missing .message in metrics event", level: "warn")
+          .metric_value = 0.0
+          .timestamp = now()
+          .tags = {}
         } else {
-          0.0
-        }
+          message_str = to_string(.message) ?? "{}"
+          parsed, err = parse_json(message_str)
 
-        .timestamp = if err == null && parsed.timestamp != null {
-          parse_timestamp!(parsed.timestamp, "%Y-%m-%dT%H:%M:%S.%fZ") || now()
-        } else {
-          now()
-        }
+          .metric_value = if err == null && parsed.value != null {
+            to_float(parsed.value) ?? 0.0
+          } else {
+            0.0
+          }
 
-        .tags = if err == null { parsed.tags || {} } else { {} }
+          .timestamp = if err == null && parsed.timestamp != null {
+            parse_timestamp(parsed.timestamp, "%Y-%m-%dT%H:%M:%S.%fZ") ?? now()
+          } else {
+            now()
+          }
+
+          .tags = if err == null { parsed.tags ?? {} } else { {} }
+        }
       } else {
         null
       }
@@ -39,36 +52,50 @@ transforms:
     inputs:
       - fluentbit
     source: |
-      .tag = to_string(.tag) ?? ""
+      # Validation et conversion de .tag
+      .tag = if .tag != null { to_string(.tag) ?? (log("Failed to convert .tag to string", level: "warn"); "") } else { "" }
+
+      # Filtrer les logs
       if starts_with(.tag, "logs.") {
-        .host = .host || "unknown"
-        .service = "app" # Ou extraire depuis une source si disponible
-        .tag = replace(.tag, "logs.", "") # Ex. "text"
+        .host = if .host != null { to_string(.host) ?? "unknown" } else { "unknown" }
+        .service = "app"
+        .tag = replace(.tag, "logs.", "")
 
-        raw_json, err = to_string(.message)
-        parsed, err = parse_json(raw_json || "{}")
+        # Validation de .message
+        if .message == null {
+          log("Missing .message in logs event", level: "warn")
+          .timestamp = now()
+          .level = "unknown"
+          .message = ""
+          .tags = {}
+        } else {
+          raw_json = to_string(.message) ?? ""
+          parsed, err = parse_json(raw_json)
 
-        .timestamp = if err == null && parsed.timestamp != null {
-          parse_timestamp!(parsed.timestamp, "%Y-%m-%dT%H:%M:%S.%fZ") || now()
-        } else if .time != null {
-          parse_timestamp!(.time, "%Y-%m-%d %H:%M:%S") || now()
-        } else {
-          now()
-        }
+          .timestamp = if err == null && parsed.timestamp != null {
+            parse_timestamp(to_string(parsed.timestamp) ?? "", "%Y-%m-%dT%H:%M:%S.%fZ") ?? now()
+          } else if .time != null {
+            parse_timestamp(to_string(.time) ?? "", "%Y-%m-%d %H:%M:%S") ?? now()
+          } else {
+            now()
+          }
 
-        .level = if err == null && parsed.level != null {
-          parsed.level
-        } else if .level != null {
-          .level
-        } else {
-          "unknown"
+          .level = if err == null && parsed.level != null {
+            to_string(parsed.level) ?? "unknown"
+          } else if .level != null {
+            to_string(.level) ?? "unknown"
+          } else {
+            "unknown"
+          }
+
+          .message = if err == null && parsed.message != null {
+            to_string(parsed.message) ?? ""
+          } else {
+            to_string(.message) ?? ""
+          }
+
+          .tags = if err == null { parsed.tags ?? {} } else { {} }
         }
-        .message = if err == null && parsed.message != null {
-          parsed.message
-        } else {
-          .message || ""
-        }
-        .tags = if err == null { parsed.tags || {} } else { {} }
       } else {
         null
       }
