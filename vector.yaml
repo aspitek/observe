@@ -11,88 +11,116 @@ transforms:
     inputs:
       - fluentbit
     source: |
-      # Ensure .tag is a string with a default fallback
-      .tag = to_string(.tag) ?? "unknown"
-      # Strict filter for metrics
-      if !starts_with(.tag, "metrics.") {
+      # Journaliser l'entrée pour le débogage
+      log("Received event: " + to_string(.),  level: "debug")
+      
+      # Vérifier que le tag existe et le convertir en string
+      if exists(.tag) {
+        .tag = to_string(.tag) ?? "unknown"
+      } else {
+        .tag = "unknown"
+      }
+      
+      # Filtrer les métriques - moins restrictif
+      if !contains(.tag, "metrics") {
+        log("Dropping non-metrics event with tag: " + .tag, level: "debug")
         null
       } else {
-        # Set host and service
+        # Extraire le nom de la métrique depuis le tag
+        .metric_name = if contains(.tag, "cpu") {
+          "cpu"
+        } else if contains(.tag, "mem") {
+          "mem"
+        } else if contains(.tag, "disk") {
+          "disk"
+        } else {
+          replace(.tag, "metrics.", "")
+        }
+        
+        # Définir les champs par défaut
         .host = to_string(.host) ?? "unknown"
         .service = "system"
-        .metric_name = replace(.tag, "metrics.", "")
-
-        # Parse message (Fluent Forward may wrap entries)
-        message = .message
-        if is_array(.message) {
-          # Handle array of entries
-          message = .message[0]
-        }
-        message_str, err = to_string(message)
-        if err != null {
-          log("Failed to convert .message to string: " + to_string(err), level: "warn")
-          .metric_value = 0.0
-          .timestamp = now()
-          .tags = {}
-        } else {
+        
+        # Traiter le message selon le format observé
+        if exists(.message) {
+          message = .message
+          
+          # Vérifier si le message est un tableau
+          if is_array(message) {
+            log("Message is an array, extracting first element", level: "debug")
+            message = message[0]
+          }
+          
+          # Convertir en string si nécessaire
+          if !is_string(message) {
+            message_str = to_string(message) ?? "{}"
+          } else {
+            message_str = message
+          }
+          
+          # Essayer d'analyser le JSON
           parsed, err = parse_json(message_str)
           if err != null {
-            log("Failed to parse JSON in metrics event: " + to_string(err), level: "warn")
-            .metric_value = 0.0
-            .timestamp = now()
-            .tags = {}
-          } else {
-            # Extract metric value
-            .metric_value = if .metric_name == "cpu" {
-              to_float(parsed.cpu_p) ?? 0.0
-            } else if .metric_name == "mem" {
-              to_float(parsed."Mem.used") ?? 0.0
-            } else if .metric_name == "disk" {
-              to_float(parsed.write_size) ?? 0.0
-            } else {
-              0.0
-            }
-
-            # Handle timestamp
-            date_val, err = to_float(parsed.date)
-            if err != null {
-              date_val = to_float(now())
-            }
-            date_ms = date_val * 1000
-            if date_ms < 0 || date_ms != date_ms {
-
-              log("Invalid timestamp in metrics event: " + to_string(date_ms), level: "warn")
-              date_ms = to_float(now())
-            }
-            .timestamp, err = from_unix_timestamp(to_int(date_ms))
-            if err != null {
-              log("Failed to convert timestamp: " + to_string(err), level: "warn")
-              .timestamp = now()
-            }
-
-            if date_ms < 0 || date_ms != date_ms {
-
-              log("Invalid timestamp in metrics event: " + to_string(date_ms), level: "warn")
-              date_ms = to_float(now())
-            }
-            .timestamp, err = from_unix_timestamp(to_int(date_ms))
-            if err != null {
-              log("Failed to convert timestamp: " + to_string(err), level: "warn")
-              .timestamp = now()
-            }
-
-            # Extract tags
-            .tags = if .metric_name == "cpu" && parsed.cpu0 != null {
-              {
-                "cpu_core": "0",
-                "p_user": to_string(parsed.cpu0.p_user) ?? "",
-                "p_system": to_string(parsed.cpu0.p_system) ?? ""
+            log("Failed parsing JSON: " + to_string(err), level: "warn")
+            parsed = {}
+          }
+          
+          # Extraire les valeurs selon le type de métrique
+          if .metric_name == "cpu" {
+            if exists(parsed.cpu_p) {
+              .metric_value = to_float(parsed.cpu_p) ?? 0.0
+              .tags = {
+                "user_p": to_string(parsed.user_p) ?? "0",
+                "system_p": to_string(parsed.system_p) ?? "0"
               }
             } else {
-              {}
+              .metric_value = 0.0
+              .tags = {}
             }
+          } else if .metric_name == "mem" {
+            if exists(parsed."Mem.used") {
+              .metric_value = to_float(parsed."Mem.used") ?? 0.0
+              .tags = {
+                "total": to_string(parsed."Mem.total") ?? "0"
+              }
+            } else {
+              .metric_value = 0.0
+              .tags = {}
+            }
+          } else if .metric_name == "disk" {
+            if exists(parsed.write_size) {
+              .metric_value = to_float(parsed.write_size) ?? 0.0
+              .tags = {}
+            } else {
+              .metric_value = 0.0
+              .tags = {}
+            }
+          } else {
+            # Métrique inconnue
+            .metric_value = 0.0
+            .tags = {}
           }
+          
+          # Gestion du timestamp
+          if exists(parsed.date) {
+            date_val = to_float(parsed.date)
+            date_ms = date_val * 1000
+            .timestamp, err = from_unix_timestamp(to_int(date_ms))
+            if err != null {
+              .timestamp = now()
+            }
+          } else {
+            .timestamp = now()
+          }
+        } else {
+          # Aucun message trouvé
+          .metric_value = 0.0
+          .tags = {}
+          .timestamp = now()
         }
+        
+        # Journaliser le résultat final pour le débogage
+        log("Processed metric event: " + to_string(.), level: "debug")
       }
 
   logs_processing:
@@ -100,61 +128,92 @@ transforms:
     inputs:
       - fluentbit
     source: |
-      # Ensure .tag is a string with a default fallback
-      .tag = to_string(.tag) ?? "unknown"
-      # Strict filter for logs
-      if !starts_with(.tag, "logs.") {
+      # Journaliser l'entrée pour le débogage
+      log("Received log event: " + to_string(.),  level: "debug")
+      
+      # Vérifier que le tag existe et le convertir en string
+      if exists(.tag) {
+        .tag = to_string(.tag) ?? "unknown"
+      } else {
+        .tag = "unknown"
+      }
+      
+      # Filtrer les logs - moins restrictif
+      if !contains(.tag, "logs") {
+        log("Dropping non-log event with tag: " + .tag, level: "debug")
         null
       } else {
+        # Définir les champs par défaut
         .host = to_string(.host) ?? "unknown"
         .service = "app"
-
-        # Handle Fluent Forward message
-        message = .message
-        if !is_array(message) {
-          message = [message]
-        }
-
-        # Process each entry
-        entry = if is_array(.message) { .message[0] } else { .message }
-        entry_str, err = to_string(entry)
-        if err != null {
-          log("Failed to convert entry to string: " + to_string(err), level: "warn")
-          .level = "unknown"
-          .message = "Invalid entry format"
-          .tags = {}
-          .timestamp = now()
-        } else {
-          parsed, err = parse_json(entry_str)
-          if err != null {
-            log("Failed to parse JSON in log entry: " + to_string(err), level: "warn")
-            .level = "unknown"
-            .message = entry_str
-            .tags = {}
-            .timestamp = now()
+        .level = "info"  # Niveau par défaut
+        
+        # Traiter le message selon le format observé
+        if exists(.message) {
+          message = .message
+          
+          # Vérifier si le message est un tableau
+          if is_array(message) {
+            log("Log message is an array, extracting first element", level: "debug")
+            message = message[0]
+          }
+          
+          # Convertir en string si nécessaire
+          if !is_string(message) {
+            message_str = to_string(message) ?? "{}"
           } else {
-            .tags = parsed.tags
-            .level = to_string(parsed.level) ?? "unknown"
-            .message = to_string(parsed.log) ?? ""
-
-            date_val, err = to_float(parsed.date)
-            if err != null {
-              date_val = to_float(now())
-            }
-            date_ms = date_val * 1000
-            if date_ms < 0 || date_ms != date_ms {
-              log("Invalid timestamp in log entry: " + to_string(date_ms), level: "warn")
-              .timestamp = now()
+            message_str = message
+          }
+          
+          # Essayer d'analyser le JSON
+          parsed, err = parse_json(message_str)
+          if err != null {
+            # Si ce n'est pas du JSON, utiliser le message tel quel
+            log("Log is not JSON, using raw message", level: "debug")
+            .message = message_str
+            .timestamp = now()
+            .tags = {}
+          } else {
+            # Extraire les informations pertinentes
+            if exists(parsed.log) {
+              .message = to_string(parsed.log)
             } else {
+              .message = message_str
+            }
+            
+            # Extraire le niveau si présent
+            if exists(parsed.level) {
+              .level = to_string(parsed.level)
+            }
+            
+            # Extraire les tags si présents
+            if exists(parsed.tags) {
+              .tags = parsed.tags
+            } else {
+              .tags = {}
+            }
+            
+            # Gestion du timestamp
+            if exists(parsed.date) {
+              date_val = to_float(parsed.date)
+              date_ms = date_val * 1000
               .timestamp, err = from_unix_timestamp(to_int(date_ms))
               if err != null {
-                log("Failed to convert timestamp: " + to_string(err), level: "warn")
                 .timestamp = now()
               }
+            } else {
+              .timestamp = now()
             }
           }
+        } else {
+          # Aucun message trouvé
+          .message = "Empty log message"
+          .tags = {}
+          .timestamp = now()
         }
-
+        
+        # Journaliser le résultat final pour le débogage
+        log("Processed log event: " + to_string(.), level: "debug")
       }
 
 sinks:
