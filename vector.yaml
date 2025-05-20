@@ -57,14 +57,15 @@ transforms:
               0.0
             }
 
-            # Extract timestamp (convert Unix timestamp to DateTime)
-            .timestamp = if parsed.date != null {
-              from_unix_timestamp(to_int(parsed.date * 1000) ?? to_int(now())) ?? now()
+            # Safely handle timestamp conversion
+            date_ms = if parsed.date != null {
+              to_float(parsed.date) * 1000
             } else {
-              now()
+              to_float(now())
             }
+            .timestamp = from_unix_timestamp(to_int(date_ms) ?? to_int(now())) ?? now()
 
-            # Extract tags (e.g., cpu_core for CPU metrics)
+            # Extract tags
             .tags = if parsed.cpu0 != null {
               {"cpu_core": "0", "p_user": to_string(parsed.cpu0.p_user) ?? "", "p_system": to_string(parsed.cpu0.p_system) ?? ""}
             } else {
@@ -121,27 +122,26 @@ transforms:
           } else {
             # Handle array of log entries
             if is_array(parsed) {
-              # Emit one event per log entry
+              # Process each log entry
               for_each(parsed) -> |index, entry| {
-                . = {
-                  "timestamp": if entry.date != null {
-                    from_unix_timestamp(to_int(entry.date * 1000) ?? to_int(now())) ?? now()
-                  } else {
-                    now()
-                  },
-                  "host": .host,
-                  "service": .service,
-                  "level": to_string(entry.level) ?? "unknown",
-                  "message": to_string(entry.log) ?? "",
-                  "tags": if entry.tags != null { entry.tags } else { {} }
+                # Create a new event by modifying the current event
+                .timestamp = if entry.date != null {
+                  date_ms = to_float(entry.date) * 1000
+                  from_unix_timestamp(to_int(date_ms) ?? to_int(now())) ?? now()
+                } else {
+                  now()
                 }
-                emit(.)
+                .level = to_string(entry.level) ?? "unknown"
+                .message = to_string(entry.log) ?? ""
+                .tags = if entry.tags != null { entry.tags } else { {} }
+                # Output the event (implicitly handled by VRL)
               }
               null
             } else {
               # Single log entry
               .timestamp = if parsed.date != null {
-                from_unix_timestamp(to_int(parsed.date * 1000) ?? to_int(now())) ?? now()
+                date_ms = to_float(parsed.date) * 1000
+                from_unix_timestamp(to_int(date_ms) ?? to_int(now())) ?? now()
               } else {
                 now()
               }
