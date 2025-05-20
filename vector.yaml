@@ -12,7 +12,9 @@ transforms:
     source: |
       .tag = .tag || "unknown"
       .hostname = .host || "unknown"
-      .raw_json = to_string(.message) || ""
+      # Handle to_string fallible operation
+      raw_json, err = to_string(.message)
+      .raw_json = if err == null { raw_json } else { "" }
       # Try to extract timestamp from JSON, fallback to now()
       parsed, err = parse_json(.raw_json)
       .timestamp = if err == null && parsed.timestamp != null {
