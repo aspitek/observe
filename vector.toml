@@ -3,7 +3,8 @@
 [sources.fluentbit]
 type = "fluent"
 address = "0.0.0.0"
-port = 24224 
+port = 24224
+mode = "tcp"
 
 [transforms.parse_json]
 type = "remap"
