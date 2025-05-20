@@ -59,7 +59,8 @@ transforms:
               date_val = to_float(now())
             }
             date_ms = date_val * 1000
-            if date_ms < 0 || is_nan(date_ms) {
+            if date_ms < 0 || date_ms != date_ms {
+
               log("Invalid timestamp in metrics event: " + to_string(date_ms), level: "warn")
               date_ms = to_float(now()) ?? 0.0
             }
@@ -69,7 +70,8 @@ transforms:
               .timestamp = now()
             }
 
-            if date_ms < 0 || is_nan(date_ms) {
+            if date_ms < 0 || date_ms != date_ms {
+
               log("Invalid timestamp in metrics event: " + to_string(date_ms), level: "warn")
               date_ms = to_float(now())
             }
