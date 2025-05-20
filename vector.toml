@@ -1,0 +1,24 @@
+# vector/vector.toml
+
+[sources.fluentbit]
+type = "fluent"
+address = "0.0.0.0"
+port = 8686
+
+[transforms.parse_json]
+type = "remap"
+inputs = ["fluentbit"]
+source = '''
+structured = parse_json!(.message)
+'''
+
+[sinks.clickhouse]
+type = "clickhouse"
+inputs = ["parse_json"]
+endpoint = "http://89.116.38.238:8123"
+database = "default"
+table = "logs"
+compression = "gzip"
+
+[sinks.clickhouse.encoding]
+codec = "json"
