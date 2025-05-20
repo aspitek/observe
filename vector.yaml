@@ -57,7 +57,7 @@ sinks:
     table: logs
     compression: gzip
     skip_unknown_fields: true
-    date_time_input_format: best_effort
+    date_time_best_effort: true
     buffer:
       type: memory
       max_events: 1000
