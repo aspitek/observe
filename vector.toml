@@ -1,9 +1,7 @@
-# vector/vector.toml
-
+# vector.toml
 [sources.fluentbit]
-type = "fluent"
-address = "0.0.0.0"
-port = 24224
+type = "socket"
+address = "0.0.0.0:24224"
 mode = "tcp"
 
 [transforms.parse_json]
@@ -13,8 +11,19 @@ source = '''
 structured = parse_json!(.message)
 '''
 
+[sinks.clickhouse]
+type = "clickhouse"
+inputs = ["parse_json"]
+endpoint = "http://89.116.38.238:8123"
+database = "default"
+table = "logs"
+compression = "gzip"
+
+[sinks.clickhouse.encoding]
+codec = "json"
+
 [sinks.console]
 type = "console"
-inputs = ["fluentbit"]
+inputs = ["parse_json"]
 target = "stdout"
 encoding.codec = "json"
