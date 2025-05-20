@@ -11,6 +11,9 @@ services:
       - ./collector/worker/dynamic_parser.lua:/fluent-bit/scripts/dynamic_parser.lua:ro
     environment:
       - FLUENTBIT_MASTER_HOST=89.116.38.238
+    comand: /fluent-bit/bin/fluent-bit -c /fluent-bit/etc/fluent-bit-worker.conf
+    ports:
+      - "2021:2021"                             
     ulimits:
       nofile:
         soft: 65536
