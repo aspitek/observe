@@ -18,6 +18,7 @@ services:
     image: timberio/vector:latest-alpine
     ports:
       - "8686:8686"  # interface web Vector optionnelle
+      - "24224:24224"  # port de sortie pour Fluent Bit
     volumes:
       - ./vector.toml:/etc/vector/vector.toml:ro
     depends_on:
