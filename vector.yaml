@@ -11,8 +11,13 @@ transforms:
     inputs:
       - fluentbit
     source: |
-      # Journaliser l'entrée pour le débogage
-      log("Received event: " + to_string(.),  level: "debug")
+      # Journaliser l'entrée pour le débogage (gestion correcte des erreurs)
+      event_string, err = to_string(.)
+      if err != null {
+        log("Received event (couldn't stringify)", level: "debug")
+      } else {
+        log("Received event: " + event_string, level: "debug")
+      }
       
       # Vérifier que le tag existe et le convertir en string
       if exists(.tag) {
@@ -23,7 +28,12 @@ transforms:
       
       # Filtrer les métriques - moins restrictif
       if !contains(.tag, "metrics") {
-        log("Dropping non-metrics event with tag: " + .tag, level: "debug")
+        tag_string, err = to_string(.tag)
+        if err != null {
+          log("Dropping non-metrics event with non-string tag", level: "debug")
+        } else {
+          log("Dropping non-metrics event with tag: " + tag_string, level: "debug")
+        }
         null
       } else {
         # Extraire le nom de la métrique depuis le tag
@@ -43,25 +53,32 @@ transforms:
         
         # Traiter le message selon le format observé
         if exists(.message) {
-          message = .message
+          local_message = .message
           
           # Vérifier si le message est un tableau
-          if is_array(message) {
+          if is_array(local_message) {
             log("Message is an array, extracting first element", level: "debug")
-            message = message[0]
+            local_message = local_message[0]
           }
           
           # Convertir en string si nécessaire
-          if !is_string(message) {
-            message_str = to_string(message) ?? "{}"
+          local_message_str = ""
+          if !is_string(local_message) {
+            msg_str, err = to_string(local_message)
+            if err != null {
+              local_message_str = "{}"
+            } else {
+              local_message_str = msg_str
+            }
           } else {
-            message_str = message
+            local_message_str = local_message
           }
           
           # Essayer d'analyser le JSON
-          parsed, err = parse_json(message_str)
+          parsed, err = parse_json(local_message_str)
           if err != null {
-            log("Failed parsing JSON: " + to_string(err), level: "warn")
+            err_str, _ = to_string(err)
+            log("Failed parsing JSON: " + err_str, level: "warn")
             parsed = {}
           }
           
@@ -103,7 +120,7 @@ transforms:
           
           # Gestion du timestamp
           if exists(parsed.date) {
-            date_val = to_float(parsed.date)
+            date_val = to_float(parsed.date) ?? now()
             date_ms = date_val * 1000
             .timestamp, err = from_unix_timestamp(to_int(date_ms))
             if err != null {
@@ -120,7 +137,12 @@ transforms:
         }
         
         # Journaliser le résultat final pour le débogage
-        log("Processed metric event: " + to_string(.), level: "debug")
+        result_string, err = to_string(.)
+        if err != null {
+          log("Processed metric event (couldn't stringify)", level: "debug")
+        } else {
+          log("Processed metric event: " + result_string, level: "debug")
+        }
       }
 
   logs_processing:
@@ -128,8 +150,13 @@ transforms:
     inputs:
       - fluentbit
     source: |
-      # Journaliser l'entrée pour le débogage
-      log("Received log event: " + to_string(.),  level: "debug")
+      # Journaliser l'entrée pour le débogage (gestion correcte des erreurs)
+      event_string, err = to_string(.)
+      if err != null {
+        log("Received log event (couldn't stringify)", level: "debug")
+      } else {
+        log("Received log event: " + event_string, level: "debug")
+      }
       
       # Vérifier que le tag existe et le convertir en string
       if exists(.tag) {
@@ -140,7 +167,12 @@ transforms:
       
       # Filtrer les logs - moins restrictif
       if !contains(.tag, "logs") {
-        log("Dropping non-log event with tag: " + .tag, level: "debug")
+        tag_string, err = to_string(.tag)
+        if err != null {
+          log("Dropping non-log event with non-string tag", level: "debug")
+        } else {
+          log("Dropping non-log event with tag: " + tag_string, level: "debug")
+        }
         null
       } else {
         # Définir les champs par défaut
@@ -150,40 +182,47 @@ transforms:
         
         # Traiter le message selon le format observé
         if exists(.message) {
-          message = .message
+          local_message = .message
           
           # Vérifier si le message est un tableau
-          if is_array(message) {
+          if is_array(local_message) {
             log("Log message is an array, extracting first element", level: "debug")
-            message = message[0]
+            local_message = local_message[0]
           }
           
           # Convertir en string si nécessaire
-          if !is_string(message) {
-            message_str = to_string(message) ?? "{}"
+          local_message_str = ""
+          if !is_string(local_message) {
+            msg_str, err = to_string(local_message)
+            if err != null {
+              local_message_str = "{}"
+            } else {
+              local_message_str = msg_str
+            }
           } else {
-            message_str = message
+            local_message_str = local_message
           }
           
           # Essayer d'analyser le JSON
-          parsed, err = parse_json(message_str)
+          parsed, err = parse_json(local_message_str)
           if err != null {
             # Si ce n'est pas du JSON, utiliser le message tel quel
-            log("Log is not JSON, using raw message", level: "debug")
-            .message = message_str
+            err_str, _ = to_string(err)
+            log("Log is not JSON: " + err_str, level: "debug")
+            .message = local_message_str
             .timestamp = now()
             .tags = {}
           } else {
             # Extraire les informations pertinentes
             if exists(parsed.log) {
-              .message = to_string(parsed.log)
+              .message = to_string(parsed.log) ?? ""
             } else {
-              .message = message_str
+              .message = local_message_str
             }
             
             # Extraire le niveau si présent
             if exists(parsed.level) {
-              .level = to_string(parsed.level)
+              .level = to_string(parsed.level) ?? "info"
             }
             
             # Extraire les tags si présents
@@ -195,7 +234,7 @@ transforms:
             
             # Gestion du timestamp
             if exists(parsed.date) {
-              date_val = to_float(parsed.date)
+              date_val = to_float(parsed.date) ?? now()
               date_ms = date_val * 1000
               .timestamp, err = from_unix_timestamp(to_int(date_ms))
               if err != null {
@@ -213,7 +252,12 @@ transforms:
         }
         
         # Journaliser le résultat final pour le débogage
-        log("Processed log event: " + to_string(.), level: "debug")
+        result_string, err = to_string(.)
+        if err != null {
+          log("Processed log event (couldn't stringify)", level: "debug")
+        } else {
+          log("Processed log event: " + result_string, level: "debug")
+        }
       }
 
 sinks:
