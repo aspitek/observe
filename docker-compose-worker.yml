@@ -2,10 +2,10 @@ version: '3.8'
 
 services:
   fluentbit-worker:
-    build:
-      context: ./collector/worker
+    image: fluent/fluent-bit:latest
     volumes:
       - /var/log/:/var/log/:ro
+      - ./collector/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
     environment:
       - FLUENTBIT_MASTER_HOST=89.116.38.238
     ports:
