@@ -125,9 +125,14 @@ transforms:
             if err != null {
               .timestamp = now()
             } else {
-              .timestamp, err = from_unix_timestamp(to_int(date_ms))
+              date_ms_int, err = to_int(date_ms)
               if err != null {
                 .timestamp = now()
+              } else {
+                .timestamp, err = from_unix_timestamp(date_ms_int)
+                if err != null {
+                  .timestamp = now()
+                }
               }
             }
             if err != null {
@@ -246,9 +251,14 @@ transforms:
               if err != null {
                 .timestamp = now()
               } else {
-                .timestamp, err = from_unix_timestamp(to_int(date_ms))
+                date_ms_int, err = to_int(date_ms)
                 if err != null {
                   .timestamp = now()
+                } else {
+                  .timestamp, err = from_unix_timestamp(date_ms_int)
+                  if err != null {
+                    .timestamp = now()
+                  }
                 }
               }
               if err != null {
