@@ -7,6 +7,8 @@ services:
       - /var/log/:/var/log/:ro
       - ./collector/fluent-bit-master.conf:/fluent-bit/etc/fluent-bit.conf:ro
       - ./collector/parsers.conf:/fluent-bit/etc/parsers.conf:ro
+    environment:
+      - FLUENTBIT_MASTER_HOST=89.116.38.238
     ports:
       - "2021:2021"
     depends_on:
