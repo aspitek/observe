@@ -9,7 +9,6 @@ services:
       - /var/log/syslog:/var/log/syslog:ro
       - /var/log/containers:/var/log/containers:ro
       - ./collector/worker/dynamic_parser.lua:/fluent-bit/scripts/dynamic_parser.lua:ro
-      - ./fluent-bit-data:/fluent-bit
     environment:
       - FLUENTBIT_MASTER_HOST=89.116.38.238
     ulimits:
