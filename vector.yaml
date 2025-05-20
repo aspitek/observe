@@ -67,7 +67,11 @@ transforms:
               log("Failed to convert date to milliseconds: " + to_string(err), level: "warn")
               date_ms = to_float(now())
             }
-            .timestamp = from_unix_timestamp(to_int(date_ms))
+            .timestamp, err = from_unix_timestamp(to_int(date_ms))
+            if err != null {
+              log("Failed to convert timestamp: " + to_string(err), level: "warn")
+              .timestamp = now()
+            }
 
             # Extract tags
             .tags = if parsed.cpu0 != null {
@@ -127,16 +131,20 @@ transforms:
             # Handle array of log entries
             if is_array(parsed) {
               for_each(array!(parsed)) -> |index, entry| {
-                .timestamp = if entry.date != null {
+                if entry.date != null {
                   date_ms, err = to_float(entry.date) * 1000
                   if err != null {
                     log("Failed to convert entry.date to milliseconds: " + to_string(err), level: "warn")
-                    now()
+                    .timestamp = now()
                   } else {
-                    from_unix_timestamp(to_int(date_ms))
+                    .timestamp, err = from_unix_timestamp(to_int(date_ms))
+                    if err != null {
+                      log("Failed to convert timestamp: " + to_string(err), level: "warn")
+                      .timestamp = now()
+                    }
                   }
                 } else {
-                  now()
+                  .timestamp = now()
                 }
                 .level = to_string(entry.level) ?? "unknown"
                 .message = to_string(entry.log) ?? ""
@@ -145,16 +153,20 @@ transforms:
               null
             } else {
               # Single log entry
-              .timestamp = if parsed.date != null {
+              if parsed.date != null {
                 date_ms, err = to_float(parsed.date) * 1000
                 if err != null {
                   log("Failed to convert parsed.date to milliseconds: " + to_string(err), level: "warn")
-                  now()
+                  .timestamp = now()
                 } else {
-                  from_unix_timestamp(to_int(date_ms))
+                  .timestamp, err = from_unix_timestamp(to_int(date_ms))
+                  if err != null {
+                    log("Failed to convert timestamp: " + to_string(err), level: "warn")
+                    .timestamp = now()
+                  }
                 }
               } else {
-                now()
+                .timestamp = now()
               }
               .level = to_string(parsed.level) ?? "unknown"
               .message = to_string(parsed.log) ?? ""
