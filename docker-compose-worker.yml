@@ -5,16 +5,10 @@ services:
     build:
       context: ./collector/worker
     volumes:
-      - /var/log/nginx:/var/log/nginx:ro
-      - /var/log/syslog:/var/log/syslog:ro
-      - /var/log/containers:/var/log/containers:ro
-      - ./collector/worker/dynamic_parser.lua:/fluent-bit/scripts/dynamic_parser.lua:ro
+      - /var/log/:/var/log/:ro
     environment:
       - FLUENTBIT_MASTER_HOST=89.116.38.238
     comand: /fluent-bit/bin/fluent-bit -c /fluent-bit/etc/fluent-bit-worker.conf
     ports:
       - "2021:2021"                             
-    ulimits:
-      nofile:
-        soft: 65536
-        hard: 65536
+
