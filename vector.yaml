@@ -5,57 +5,49 @@ sources:
     mode: tcp
 
 transforms:
-  # Transformation pour les métriques
   metrics_processing:
     type: remap
     inputs:
       - fluentbit
     source: |
-      # Filtrer les métriques
+      .tag = to_string(.tag) ?? ""
       if starts_with(.tag, "metrics.") {
         .host = .host || "unknown"
         .service = "system" # Ou extraire depuis une source si disponible
         .metric_name = replace(.tag, "metrics.", "") # Ex. "disk", "cpu", "mem"
-        
-        # Extraire la valeur de la métrique
+
         parsed, err = parse_json(to_string(.message) || "{}")
         .metric_value = if err == null && parsed.value != null {
           to_float(parsed.value) || 0.0
         } else {
           0.0
         }
-        
-        # Timestamp
+
         .timestamp = if err == null && parsed.timestamp != null {
           parse_timestamp!(parsed.timestamp, "%Y-%m-%dT%H:%M:%S.%fZ") || now()
         } else {
           now()
         }
-        
-        # Tags (ex. cpu_core, disk_name)
+
         .tags = if err == null { parsed.tags || {} } else { {} }
       } else {
-        # Ignorer les non-métriques
         null
       }
 
-  # Transformation pour les logs
   logs_processing:
     type: remap
     inputs:
       - fluentbit
     source: |
-      # Filtrer les logs
+      .tag = to_string(.tag) ?? ""
       if starts_with(.tag, "logs.") {
         .host = .host || "unknown"
         .service = "app" # Ou extraire depuis une source si disponible
         .tag = replace(.tag, "logs.", "") # Ex. "text"
-        
-        # Parser JSON ou non-JSON
+
         raw_json, err = to_string(.message)
         parsed, err = parse_json(raw_json || "{}")
-        
-        # Timestamp
+
         .timestamp = if err == null && parsed.timestamp != null {
           parse_timestamp!(parsed.timestamp, "%Y-%m-%dT%H:%M:%S.%fZ") || now()
         } else if .time != null {
@@ -63,8 +55,7 @@ transforms:
         } else {
           now()
         }
-        
-        # Champs logs
+
         .level = if err == null && parsed.level != null {
           parsed.level
         } else if .level != null {
@@ -79,7 +70,6 @@ transforms:
         }
         .tags = if err == null { parsed.tags || {} } else { {} }
       } else {
-        # Ignorer les non-logs
         null
       }
 
@@ -129,21 +119,3 @@ sinks:
         - level
         - message
         - tags
-
-  # Sink pour RAG (futur)
-  # rag_http:
-  #   type: http
-  #   inputs:
-  #     - logs_processing
-  #   uri: http://localhost:5000/embedding
-  #   method: post
-  #   encoding:
-  #     codec: json
-  #     only_fields:
-  #       - message
-  #       - tags
-  #   healthcheck: true
-  #   buffer:
-  #     type: memory
-  #     max_events: 500
-  #     when_full: block
