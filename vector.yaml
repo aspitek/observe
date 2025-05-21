@@ -4,7 +4,6 @@ sources:
     address: 0.0.0.0:24224
     mode: tcp
     format: fluent
-    encoding: msgpack
 
 transforms:
   metrics_processing:
