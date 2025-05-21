@@ -161,13 +161,11 @@ transforms:
           .level = "info"
         }
 
-        # Recherche d’un JSON embarqué dans la string du log
         if contains(.message, "{\"") {
           json_start = index(.message, "{\"") ?? -1
           if json_start >= 0 {
-            json_part = substring(.message, start=json_start)
+            json_part = substring(.message, json_start)
             parsed_log = parse_json(json_part) ?? null
-
             if parsed_log != null {
               if exists(parsed_log.level) {
                 .level = parsed_log.level
@@ -181,12 +179,13 @@ transforms:
             }
           }
         }
+
       } else {
         .message = to_string(content) ?? "{}"
         .level = "info"
       }
 
-      preview = substring(.message, start=0, end=50) ?? ""
+      preview = substring(.message, 0, 50) ?? ""
       log("Log traité de niveau " + to_string(.level) + ": " + preview + "...", level: "debug")
 
 sinks:
