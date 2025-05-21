@@ -111,7 +111,7 @@ transforms:
       }
 
       msg = "Métrique traitée: " + to_string(.metric_name) + " = " + to_string(.metric_value)
-      log(msg ?? "Erreur de log", level: "debug")
+      log(msg, level: "debug")
 
   process_logs:
     type: remap
