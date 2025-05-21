@@ -123,8 +123,8 @@ transforms:
       }
 
       content = .content
-
       .timestamp = now()
+
       if exists(content.date) {
         ts_float, err = to_float(content.date)
         if err == null {
@@ -161,10 +161,11 @@ transforms:
           .level = "info"
         }
 
+        # Recherche d’un JSON embarqué dans la string du log
         if contains(.message, "{\"") {
-          json_start = string_index(.message, "{\"") ?? -1
+          json_start = index(.message, "{\"") ?? -1
           if json_start >= 0 {
-            json_part = slice(.message, start=json_start)
+            json_part = substring(.message, start=json_start)
             parsed_log = parse_json(json_part) ?? null
 
             if parsed_log != null {
@@ -185,8 +186,8 @@ transforms:
         .level = "info"
       }
 
-      msg = "Log traité de niveau " + to_string(.level) + ": " + slice(.message, start=0, end=50) + "..."
-      log(msg ?? "Erreur log", level: "debug")
+      preview = substring(.message, start=0, end=50) ?? ""
+      log("Log traité de niveau " + to_string(.level) + ": " + preview + "...", level: "debug")
 
 sinks:
   metrics_clickhouse:
