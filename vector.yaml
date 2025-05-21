@@ -12,34 +12,27 @@ transforms:
     inputs:
       - fluentbit
     source: |
-      # Journalisation pour le débogage
       log("Événement reçu: " + to_string(.) ?? "impossible à convertir en string", level: "debug")
-      
-      # Assurer que nous avons un tag
+
       if !exists(.tag) {
         .tag = "unknown"
       } else if !is_string(.tag) {
         .tag = to_string(.tag) ?? "unknown"
       }
-      
-      # Déterminer le type d'événement basé sur le contenu
+
       if exists(.message) && (is_object(.message) || is_string(.message)) {
         message_obj = .message
-        
-        # Si le message est une chaîne, essayer de le parser en JSON
+
         if is_string(message_obj) {
           parsed = parse_json(message_obj) ?? null
           if parsed != null {
             message_obj = parsed
           }
         }
-        
-        # Si c'est un array, prendre le premier élément
-        # Correction: Vérifier que c'est un array avant d'utiliser length()
-        if is_array(message_obj) && is_array(message_obj) && array_size(message_obj) > 0 {
+
+        if is_array(message_obj) && array_length(message_obj) > 0 {
           message_obj = message_obj[0]
-          
-          # Re-parser si nécessaire
+
           if is_string(message_obj) {
             parsed = parse_json(message_obj) ?? null
             if parsed != null {
@@ -47,8 +40,7 @@ transforms:
             }
           }
         }
-        
-        # Détecter le type d'événement basé sur le contenu
+
         if is_object(message_obj) && (exists(message_obj.cpu_p) || exists(message_obj["Mem.used"]) || exists(message_obj.read_size)) {
           .event_type = "metric"
           .content = message_obj
@@ -56,150 +48,107 @@ transforms:
           .event_type = "log"
           .content = message_obj
         } else {
-          # Par défaut, nous supposons que c'est un log
           .event_type = "log"
           .content = message_obj
         }
       } else {
-        # Pas de message ou format non reconnu
         .event_type = "unknown"
-        log("Type d'événement inconnu ou format non reconnu: " + .tag, level: "warn")
+        log("Type d'événement inconnu ou format non reconnu: " + to_string(.tag), level: "warn")
         null
       }
 
-  # Traitement des métriques
   process_metrics:
     type: remap
     inputs:
       - data_router
     source: |
-      # Ne traiter que les événements de type métrique
       if .event_type != "metric" {
         null
       }
-      
-      # Extraire les données de contenu
+
       content = .content
-      
-      # Définir un timestamp valide
+
+      .timestamp = now()
       if exists(content.date) {
         ts_float, err = to_float(content.date)
         if err == null {
-          # Convertir en ms si nécessaire
-          if ts_float < 1000000000000.0 {
-            ts_ms = to_int(ts_float * 1000)
+          ts_ms = if ts_float < 1000000000000.0 {
+            to_int(ts_float * 1000.0)
           } else {
-            ts_ms = to_int(ts_float)
+            to_int(ts_float)
           }
-          
           if ts_ms != null {
             .timestamp = from_unix_timestamp(ts_ms, unit: "milliseconds") ?? now()
-          } else {
-            .timestamp = now()
           }
-        } else {
-          .timestamp = now()
         }
-      } else {
-        .timestamp = now()
       }
-      
-      # Préserver l'hôte s'il existe
+
       if exists(content.host) {
         .host = to_string(content.host) ?? "unknown"
       }
-      
-      # Service par défaut pour les métriques système
+
       .service = "system"
-      
-      # Déterminer le type de métrique
+
+      .tags = {}
       if exists(content.cpu_p) {
         .metric_name = "cpu"
         .metric_value = to_float(content.cpu_p) ?? 0.0
-        .tags = {
-          "user_p": to_string(content.user_p) ?? "",
-          "system_p": to_string(content.system_p) ?? ""
-        }
-      } 
-      # Correction: Utiliser la notation avec crochets pour les clés contenant des points
-      else if exists(content["Mem.used"]) {
+        .tags.user_p = to_string(content.user_p) ?? ""
+        .tags.system_p = to_string(content.system_p) ?? ""
+      } else if exists(content."Mem.used") {
         .metric_name = "mem"
-        .metric_value = to_float(content["Mem.used"]) ?? 0.0
-        .tags = {
-          "total": to_string(content["Mem.total"]) ?? "",
-          "free": to_string(content["Mem.free"]) ?? ""
-        }
-      }
-      else if exists(content.read_size) || exists(content.write_size) {
+        .metric_value = to_float(content."Mem.used") ?? 0.0
+        .tags.total = to_string(content."Mem.total") ?? ""
+        .tags.free = to_string(content."Mem.free") ?? ""
+      } else if exists(content.read_size) || exists(content.write_size) {
         .metric_name = "disk"
-        # Utiliser write_size comme valeur principale
         .metric_value = to_float(content.write_size) ?? 0.0
-        .tags = {
-          "read_size": to_string(content.read_size) ?? "0"
-        }
-      }
-      else {
-        # Métrique inconnue
+        .tags.read_size = to_string(content.read_size) ?? "0"
+      } else {
         log("Type de métrique non reconnu: " + to_string(content) ?? "", level: "warn")
         .metric_name = "unknown"
         .metric_value = 0.0
-        .tags = {}
       }
-      
-      # Journaliser pour le débogage
-      log("Métrique traitée: " + .metric_name + " = " + to_string(.metric_value), level: "debug")
 
-  # Traitement des logs
+      msg = "Métrique traitée: " + to_string(.metric_name) + " = " + to_string(.metric_value)
+      log(msg ?? "Erreur de log", level: "debug")
+
   process_logs:
     type: remap
     inputs:
       - data_router
     source: |
-      # Ne traiter que les événements de type log
       if .event_type != "log" {
         null
       }
-      
-      # Extraire les données de contenu
+
       content = .content
-      
-      # Définir un timestamp valide
+
+      .timestamp = now()
       if exists(content.date) {
-        # Correction: Gérer l'erreur potentielle avec to_float
         ts_float, err = to_float(content.date)
         if err == null {
-          # Convertir en ms si nécessaire
-          if ts_float < 1000000000000.0 {
-            ts_ms = to_int(ts_float * 1000)
+          ts_ms = if ts_float < 1000000000000.0 {
+            to_int(ts_float * 1000.0)
           } else {
-            ts_ms = to_int(ts_float)
+            to_int(ts_float)
           }
-          
           if ts_ms != null {
             .timestamp = from_unix_timestamp(ts_ms, unit: "milliseconds") ?? now()
-          } else {
-            .timestamp = now()
           }
-        } else {
-          .timestamp = now()
         }
-      } else {
-        .timestamp = now()
       }
-      
-      # Préserver l'hôte s'il existe
+
       if exists(content.host) {
         .host = to_string(content.host) ?? "unknown"
       }
-      
-      # Service par défaut pour les logs
+
       .service = "app"
-      
-      # Extraire le message de log
+      .tags = {}
+
       if exists(content.log) {
         .message = to_string(content.log) ?? ""
-        
-        # Essayer de détecter le niveau de log
+
         if contains(.message, " ERROR ") || contains(.message, "[ERROR]") {
           .level = "error"
         } else if contains(.message, " WARN ") || contains(.message, "[WARN]") {
@@ -209,24 +158,19 @@ transforms:
         } else if contains(.message, " DEBUG ") || contains(.message, "[DEBUG]") {
           .level = "debug"
         } else {
-          .level = "info"  # Niveau par défaut
+          .level = "info"
         }
-        
-        # Essayer d'extraire des informations JSON du message
+
         if contains(.message, "{\"") {
-          # Identifier le début du JSON
-          json_start = index_of(.message, "{\"")
+          json_start = string_index(.message, "{\"") ?? -1
           if json_start >= 0 {
-            json_part = slice(.message, json_start)
+            json_part = slice(.message, start=json_start)
             parsed_log = parse_json(json_part) ?? null
-            
-            if parsed_log != null && exists(parsed_log.level) {
-              .level = parsed_log.level
-            }
-            
-            # Ajouter les tags pertinents si disponibles
-            .tags = {}
+
             if parsed_log != null {
+              if exists(parsed_log.level) {
+                .level = parsed_log.level
+              }
               if exists(parsed_log.caller) {
                 .tags.caller = parsed_log.caller
               }
@@ -234,20 +178,15 @@ transforms:
                 .tags.event = parsed_log.event
               }
             }
-          } else {
-            .tags = {}
           }
-        } else {
-          .tags = {}
         }
       } else {
         .message = to_string(content) ?? "{}"
         .level = "info"
-        .tags = {}
       }
-      
-      # Journaliser pour le débogage
-      log("Log traité de niveau " + .level + ": " + slice(.message, 0, 50) + "...", level: "debug")
+
+      msg = "Log traité de niveau " + to_string(.level) + ": " + slice(.message, start=0, end=50) + "..."
+      log(msg ?? "Erreur log", level: "debug")
 
 sinks:
   metrics_clickhouse:
@@ -293,7 +232,7 @@ sinks:
       when_full: drop_newest
     batch:
       max_events: 10
-      timeout_secs: 1  
+      timeout_secs: 1
     encoding:
       only_fields:
         - timestamp
